@@ -1,6 +1,6 @@
 import * as dgram from "dgram";
 import { formatBytes, mergeRecordingBuffers, parseRtpPacket } from "./utils.js";
-import { saveRecording } from "./minio_client.js";
+import { concatRecordingAndSave, saveRecording } from "./minio_client.js";
 import { RecordingMetadata, RtpPacket, UdpClient } from "./interfaces.js";
 
 export class AudioRecorder {
@@ -30,6 +30,8 @@ export class AudioRecorder {
         this.buffer = Buffer.alloc(this.BPMS * this.RECORDING_DURATION); // Allocating buffer space
         this.startedDate = new Date();
         this.clients = new Map();
+
+        this.setupServer();
     }
 
     setupServer(): void {
@@ -56,23 +58,19 @@ export class AudioRecorder {
         const rtpPacket: RtpPacket | null = parseRtpPacket(msg);
 
         if (rtpPacket) {
-            const client: UdpClient | undefined = this.clients.get(
+            let client: UdpClient | undefined = this.clients.get(
                 rtpPacket.ssrc.toString()
             );
 
-            if (!client) {
-                console.log("Client is undefined");
-                return;
-            }
-
             this.updateClient(rtpPacket, client);
+            client = this.clients.get(rtpPacket.ssrc.toString());
             this.processData(rtpPacket, client);
         } else {
             console.log("Received non-RTP packet");
         }
     }
 
-    updateClient(rtpPacket: RtpPacket, client: UdpClient) {
+    updateClient(rtpPacket: RtpPacket, client: UdpClient | undefined) {
         if (!client) {
             this.clients.set(rtpPacket.ssrc.toString(), {
                 timestamp: 0,
@@ -86,7 +84,8 @@ export class AudioRecorder {
         }
     }
 
-    async processData(rtpPacket: RtpPacket, client: UdpClient) {
+    async processData(rtpPacket: RtpPacket, client: UdpClient | undefined) {
+        if (!client) return;
         console.log("ssrc: ", rtpPacket.ssrc);
         console.log("sequence number: ", rtpPacket.sequenceNumber);
         console.log("timestamp: ", rtpPacket.timestamp);
@@ -159,6 +158,8 @@ export class AudioRecorder {
         // normalizeLoudness(cutBuffer);
 
         await saveRecording(this.sessionID, this.recordingCount, cutBuffer);
+
+        await concatRecordingAndSave(this.sessionID, this.recordingCount);
 
         return {
             id: this.sessionID,

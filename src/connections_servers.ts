@@ -23,6 +23,7 @@ ioServer.on("connection", (socket) => {
             id: string;
         }) => {
             const { multicastAddress, port, id } = recordingData;
+            console.log(multicastAddress, port, id);
             const audioRecorder = new AudioRecorder(multicastAddress, port, id);
             recordings.set(id, audioRecorder);
 
@@ -34,12 +35,13 @@ ioServer.on("connection", (socket) => {
         }
     );
 
-    socket.on("stopRecording", async (recordingData: { id: string }) => {
-        const { id } = recordingData;
+    socket.on("stopRecording", async (id) => {
+        console.log("recording stopped", id);
         const audioRecorder = recordings.get(id);
 
         if (audioRecorder) {
             const data = await audioRecorder.handleDisconnect();
+            console.log(data);
 
             // remove recording to temporary running recording table
             ioServer.emit("deleteTemporaryRecording", data);
